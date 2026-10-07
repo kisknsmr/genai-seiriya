@@ -77,7 +77,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
     return svg;
   }
 
-  const state = { convs: [], checked: new Set(), filter: '', busy: false, ctl: null, listError: null };
+  const state = { convs: [], checked: new Set(), knownIds: new Set(), filter: '', busy: false, ctl: null, listResume: null };
   let root, ui, sideHost, sideBtn, fab;
 
   const log = (...a) => console.info('[AI Chat Saver]', ...a);
@@ -273,32 +273,51 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
     updateCount();
   }
 
-  const retryNote = (e, wait) => setStatus(`通信エラー（${e.message}）。${Math.round(wait / 1000)}秒後に再試行します…`, true);
+  // 再試行中も「何をしている途中か」が分かるように、元の表示に追記する
+  let statusBase = '';
+  const progress = (text) => setStatus((statusBase = text));
+  const retryNote = (e, wait, n, max) =>
+    setStatus(`${statusBase}\n通信エラー（${e.message}）。${Math.round(wait / 1000)}秒後に再試行します（${n}/${max}回目）`, true);
+
+  function updateReloadLabel() {
+    ui.reloadBtn.textContent = state.listResume ? '続きを読み込む' : '再読み込み';
+  }
 
   async function loadList() {
+    const resume = state.listResume;
     state.ctl = { aborted: false };
     setBusy(true);
     setBar(0);
-    state.convs = [];
-    renderList();
+    if (!resume) {
+      state.convs = [];
+      renderList();
+    }
     try {
-      const { items, error } = await api.listConversations({
+      const result = await api.listConversations({
         ctl: state.ctl,
-        onProgress: (n) => setStatus(`会話一覧を読み込み中… ${n} 件`),
+        resume,
+        onProgress: (n) => progress(`会話一覧を読み込み中… ${n} 件`),
         onRetry: retryNote,
       });
-      const known = new Set(items.map((c) => c.id));
+      state.listResume = result.resume;
+      const known = new Set(result.items.map((c) => c.id));
       const extra = api.sidebarConversations().filter((c) => !known.has(c.id));
-      state.convs = items.concat(extra).sort((a, b) => b.time - a.time);
-      state.checked = new Set(state.convs.map((c) => c.id));
+      const prevChecked = state.checked;
+      state.convs = result.items.concat(extra).sort((a, b) => b.time - a.time);
+      state.checked = new Set(state.convs.filter((c) => !resume || prevChecked.has(c.id) || !state.knownIds.has(c.id)).map((c) => c.id));
+      state.knownIds = new Set(state.convs.map((c) => c.id));
       let msg = `${state.convs.length} 件の会話が見つかりました。`;
       if (extra.length) msg += `（うちサイドバーから補完 ${extra.length} 件）`;
-      if (error) msg += `\n一覧の取得が途中で止まりました（${error.message}）。「再読み込み」を試してください。`;
-      setStatus(msg, !!error);
+      if (result.error) {
+        msg += `\n一覧の読み込みが途中で止まりました（${result.error.message}）。`;
+        msg += `\n「続きを読み込む」で、止まった所から再開できます。`;
+      }
+      setStatus(msg, !!result.error);
     } catch (e) {
-      setStatus(e instanceof ACS.AbortedError ? '読み込みを中止しました。' : `一覧を取得できません: ${e.message}`, true);
+      setStatus(`一覧を取得できません: ${e.message}`, true);
     } finally {
       setBusy(false);
+      updateReloadLabel();
       renderList();
     }
   }
@@ -323,42 +342,74 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
     setBusy(true);
     const files = [];
     const entries = [];
-    const failed = [];
+    let failed = [];
     const used = new Set();
     const started = Date.now();
     let done = 0;
 
+    const fetchOne = async (c, label) => {
+      progress(label);
+      const turns = await api.getTurns(c.id, { ctl: state.ctl, onRetry: retryNote });
+      if (!turns.length) throw new Error('本文が空でした');
+      const base = ex.fileBase(c, used);
+      if (wantMd) files.push({ name: `markdown/${base}.md`, data: ex.toMarkdown(c, turns) });
+      if (wantHtml) files.push({ name: `html/${base}.html`, data: ex.toHtml(c, turns) });
+      entries.push({ conv: c, base });
+    };
+
     try {
+      // 1周目: 全件を順に取得。失敗しても止まらず次へ進む
       for (const c of targets) {
         if (state.ctl.aborted) break;
         const left = done ? Math.ceil((((Date.now() - started) / done) * (targets.length - done)) / 60000) : null;
-        setStatus(`保存中 ${done + 1} / ${targets.length}：${c.title || '(無題)'}${left ? `\n残り約 ${left} 分` : ''}`);
         try {
-          const turns = await api.getTurns(c.id, { ctl: state.ctl, onRetry: retryNote });
-          if (!turns.length) throw new Error('本文が空でした');
-          const base = ex.fileBase(c, used);
-          if (wantMd) files.push({ name: `markdown/${base}.md`, data: ex.toMarkdown(c, turns) });
-          if (wantHtml) files.push({ name: `html/${base}.html`, data: ex.toHtml(c, turns) });
-          entries.push({ conv: c, base });
+          await fetchOne(c, `保存中 ${done + 1} / ${targets.length}：${c.title || '(無題)'}${left ? `\n残り約 ${left} 分` : ''}`);
         } catch (e) {
           if (e instanceof ACS.AbortedError) break;
-          failed.push(`${c.title || '(無題)'}\t${c.url}\t${e.message}`);
+          failed.push({ c, e });
         }
         done++;
         setBar(done / targets.length);
+      }
+
+      // 2周目: 失敗した会話だけ、少し間を空けてもう一度挑戦する
+      if (failed.length && !state.ctl.aborted) {
+        const retry = failed;
+        failed = [];
+        try {
+          progress(`${retry.length} 件の取得に失敗しました。30秒後に再挑戦します…`);
+          await ACS.sleep(30000, state.ctl);
+          for (let i = 0; i < retry.length; i++) {
+            const { c } = retry[i];
+            try {
+              await fetchOne(c, `再挑戦 ${i + 1} / ${retry.length}：${c.title || '(無題)'}`);
+            } catch (e) {
+              if (e instanceof ACS.AbortedError) throw e;
+              failed.push({ c, e });
+            }
+          }
+        } catch (e) {
+          if (!(e instanceof ACS.AbortedError)) throw e;
+          const ok = new Set(entries.map((x) => x.conv.id));
+          failed = failed.concat(retry.filter((x) => !ok.has(x.c.id) && !failed.some((f) => f.c.id === x.c.id)));
+        }
       }
 
       if (!entries.length) {
         setStatus(state.ctl.aborted ? '中止しました。保存した会話はありません。' : '保存できた会話がありません。', true);
         return;
       }
+      entries.sort((a, b) => b.conv.time - a.conv.time);
       if (wantHtml) files.push({ name: 'index.html', data: ex.indexHtml(entries, api.platform) });
-      if (failed.length) files.push({ name: 'errors.txt', data: 'タイトル\tURL\t理由\n' + failed.join('\n') + '\n' });
+      if (failed.length) {
+        const lines = failed.map(({ c, e }) => `${c.title || '(無題)'}\t${c.url}\t${e.message}`);
+        files.push({ name: 'errors.txt', data: 'タイトル\tURL\t理由\n' + lines.join('\n') + '\n' });
+      }
 
       download(ACS.makeZip(files), `${api.platform.toLowerCase()}_export_${ex.stamp()}.zip`);
       let msg = `${entries.length} 件を保存しました。`;
       if (state.ctl.aborted) msg = `中止しました。それまでの ${entries.length} 件を保存しました。`;
-      if (failed.length) msg += `\n${failed.length} 件は失敗しました（ZIP内の errors.txt を参照）。`;
+      if (failed.length) msg += `\n${failed.length} 件は2回挑戦しても取得できませんでした（ZIP内の errors.txt を参照）。`;
       setStatus(msg, failed.length > 0);
     } finally {
       setBusy(false);

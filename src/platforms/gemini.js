@@ -5,7 +5,8 @@
 
   const ORIGIN = 'https://gemini.google.com';
   const MIN_INTERVAL_MS = 1300; // 1分あたり約45回まで（制限は約50回/分）
-  const MAX_TRIES = 5;
+  const MAX_TRIES = 20; // 待ち時間は最大60秒ずつ → 合計で約17分は粘る
+  const MAX_WAIT_MS = 60000;
 
   let lastCall = 0;
   let reqId = 100000 + Math.floor(Math.random() * 90000);
@@ -124,8 +125,8 @@
         if (e instanceof AbortedError) throw e;
         lastErr = e;
         if (i === MAX_TRIES - 1) break;
-        const wait = e.status === 429 ? 60000 : 2000 * 2 ** i;
-        if (onRetry) onRetry(e, wait);
+        const wait = e.status === 429 ? MAX_WAIT_MS : Math.min(2000 * 2 ** i, MAX_WAIT_MS);
+        if (onRetry) onRetry(e, wait, i + 1, MAX_TRIES);
         await sleep(wait, ctl);
         if ([400, 401, 403].includes(e.status)) {
           try {
@@ -160,11 +161,12 @@
     };
   }
 
-  // 戻り値: { items, error }。途中で失敗しても、取れた分は返す
-  async function listConversations({ ctl, onProgress, onRetry } = {}) {
-    const items = [];
-    const seen = new Set();
-    let tok = null;
+  // 戻り値: { items, error, resume }。途中で失敗しても、取れた分と「続きの位置」を返す
+  // resume を渡すと、前回止まった所から続きを読み込む
+  async function listConversations({ ctl, onProgress, onRetry, resume } = {}) {
+    const items = resume ? resume.items.slice() : [];
+    const seen = new Set(items.map((c) => c.id));
+    let tok = resume ? resume.tok : null;
     let emptyStreak = 0;
     try {
       for (let page = 0; page < 2000; page++) {
@@ -189,10 +191,9 @@
         if (emptyStreak >= 3) break;
         tok = next;
       }
-      return { items, error: null };
+      return { items, error: null, resume: null };
     } catch (e) {
-      if (e instanceof AbortedError) throw e;
-      return { items, error: e };
+      return { items, error: e, resume: { items, tok } };
     }
   }
 
