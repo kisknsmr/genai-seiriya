@@ -1,11 +1,12 @@
-// Gemini 画面に「一括保存」ボタンとパネルを表示する。
-// Gemini は innerHTML を禁止している（Trusted Types）ため、要素は createElement で作る。
+// AI サービスの画面に「一括保存」ボタンとパネルを表示する（Gemini / ChatGPT / Claude 共通）。
+// 各サイトは innerHTML を禁止している場合がある（Trusted Types）ため、要素は createElement で作る。
 (() => {
   if (window.__acsLoaded) return;
   window.__acsLoaded = true;
 
   const ACS = window.ACS;
-  const api = ACS.gemini;
+  const api = ACS.platforms[location.hostname];
+  if (!api) return;
   const ex = ACS.exporters;
 
   const CSS = `
@@ -32,6 +33,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
 .row{display:flex;gap:10px;align-items:center;padding:7px 8px;border-radius:8px;cursor:pointer}
 .row:hover{background:#f0f4f9}
 .row .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .tag{font-size:11px;padding:1px 8px;border-radius:10px;background:rgba(128,128,128,.15);flex:none;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row .d{font-size:12px;opacity:.6;flex:none}
 .empty{padding:40px;text-align:center;opacity:.7}
 .foot{padding:12px 20px;display:flex;flex-direction:column;gap:10px}
@@ -56,7 +58,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
     return el;
   }
 
-  // サイドバー用ボタン。文字色は Gemini のテーマ（ライト/ダーク）を引き継ぐ
+  // サイドバー用ボタン。文字色は各サイトのテーマ（ライト/ダーク）を引き継ぐ
   const SIDE_CSS = `
 :host{display:block;margin:4px 0}
 .side{display:flex;align-items:center;gap:12px;width:100%;min-width:40px;height:40px;padding:0 12px;border:0;border-radius:20px;
@@ -88,16 +90,17 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
     return r.width > 0 && r.height > 0;
   }
 
-  const CONV_LINK_RE = /\/app\/[0-9a-f]{8,}/i;
 
   // サイドバー内で「会話一覧の直前」を探す。見えている場所だけを対象にする
   function findSidebarSpot() {
-    for (const list of document.querySelectorAll('conversations-list')) {
-      if (isVisible(list) && list.parentElement) return { parent: list.parentElement, before: list, via: 'conversations-list' };
+    if (api.sidebarSelector) {
+      for (const list of document.querySelectorAll(api.sidebarSelector)) {
+        if (isVisible(list) && list.parentElement) return { parent: list.parentElement, before: list, via: api.sidebarSelector };
+      }
     }
     // 予備: 会話リンクをすべて含む一番小さい箱の直前
     const links = [...document.querySelectorAll('a[href*="/app/"]')].filter(
-      (a) => CONV_LINK_RE.test(a.getAttribute('href') || '') && isVisible(a)
+      (a) => api.linkRe.test(a.getAttribute('href') || '') && isVisible(a)
     );
     if (links.length >= 2) {
       let box = links[0].parentElement;
@@ -105,6 +108,19 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
       if (box && box !== document.body && box.parentElement) return { parent: box.parentElement, before: box, via: 'links' };
     }
     return null;
+  }
+
+  // サイドバーに表示済みの会話（一覧の取りこぼし補完用）
+  function sidebarConversations() {
+    const out = [];
+    const seen = new Set();
+    for (const a of document.querySelectorAll('a[href]')) {
+      const m = (a.getAttribute('href') || '').match(api.linkRe);
+      if (!m || seen.has(m[1])) continue;
+      seen.add(m[1]);
+      out.push(api.makeConv(m[1], (api.linkTitle ? api.linkTitle(a) : a.textContent) || ''));
+    }
+    return out;
   }
 
   // 戻り値: サイドバーのボタンが実際に見えているか
@@ -132,7 +148,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
     fab = h('button', { class: 'fab', title: '会話を一括保存', onclick: open }, '💾 一括保存');
     log('読み込み完了');
 
-    // Gemini は画面を書き換えるため、ボタンが消えたら付け直す。
+    // サイトは画面を何度も書き換えるため、ボタンが消えたら付け直す。
     // サイドバーのボタンが見えない間（サイドバーを閉じている時など）は右下に予備ボタンを出す。
     const started = Date.now();
     const sync = () => {
@@ -183,7 +199,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
       h(
         'div',
         { class: 'panel' },
-        h('div', { class: 'head' }, h('h2', {}, 'Gemini の会話を一括保存'), h('button', { class: 'x', title: '閉じる', onclick: close }, '×')),
+        h('div', { class: 'head' }, h('h2', {}, `${api.platform} の会話を一括保存`), h('button', { class: 'x', title: '閉じる', onclick: close }, '×')),
         h(
           'div',
           { class: 'tools' },
@@ -200,7 +216,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
             'div',
             { class: 'opts' },
             h('label', {}, md, 'Markdown（.md）'),
-            h('label', {}, html, 'HTML（Gemini風の見た目）'),
+            h('label', {}, html, `HTML（${api.platform}風の見た目）`),
             h('span', { class: 'spacer' }),
             count,
             stopBtn,
@@ -246,7 +262,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
     ui.barFill.style.width = `${Math.round(Math.max(0, Math.min(1, ratio)) * 100)}%`;
   }
 
-  const visible = () => state.convs.filter((c) => !state.filter || c.title.toLowerCase().includes(state.filter));
+  const visible = () => state.convs.filter((c) => !state.filter || `${c.title} ${c.tag || ''}`.toLowerCase().includes(state.filter));
 
   function setVisible(on) {
     for (const c of visible()) on ? state.checked.add(c.id) : state.checked.delete(c.id);
@@ -267,7 +283,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
           updateCount();
         },
       });
-      return h('label', { class: 'row' }, cb, h('span', { class: 't', title: c.title }, c.title || '(無題)'), h('span', { class: 'd' }, ex.formatDate(c.time, false)));
+      return h('label', { class: 'row' }, cb, h('span', { class: 't', title: c.title }, c.title || '(無題)'), c.tag ? h('span', { class: 'tag', title: c.tag }, c.tag) : null, h('span', { class: 'd' }, ex.formatDate(c.time, false)));
     });
     ui.list.replaceChildren(...(rows.length ? rows : [h('div', { class: 'empty' }, state.busy ? '読み込み中…' : '会話がありません')]));
     updateCount();
@@ -301,7 +317,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
       });
       state.listResume = result.resume;
       const known = new Set(result.items.map((c) => c.id));
-      const extra = api.sidebarConversations().filter((c) => !known.has(c.id));
+      const extra = sidebarConversations().filter((c) => !known.has(c.id));
       const prevChecked = state.checked;
       state.convs = result.items.concat(extra).sort((a, b) => b.time - a.time);
       state.checked = new Set(state.convs.filter((c) => !resume || prevChecked.has(c.id) || !state.knownIds.has(c.id)).map((c) => c.id));

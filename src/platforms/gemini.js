@@ -1,37 +1,13 @@
 // Gemini の内部 API（batchexecute）から会話一覧と本文を取得する。
 // 仕様メモ: ai-toolbox-source/NOTES.md
 (() => {
-  const ACS = (window.ACS = window.ACS || {});
+  const ACS = window.ACS;
+  const { HttpError, fatal } = ACS.net;
 
   const ORIGIN = 'https://gemini.google.com';
-  const MIN_INTERVAL_MS = 1300; // 1分あたり約45回まで（制限は約50回/分）
-  const MAX_TRIES = 20; // 待ち時間は最大60秒ずつ → 合計で約17分は粘る
-  const MAX_WAIT_MS = 60000;
 
-  let lastCall = 0;
   let reqId = 100000 + Math.floor(Math.random() * 90000);
   let cached = null;
-
-  class AbortedError extends Error {
-    constructor() {
-      super('中止しました');
-      this.name = 'AbortedError';
-    }
-  }
-
-  // ctl = { aborted: boolean }。中止ボタンで aborted を true にする
-  function sleep(ms, ctl) {
-    return new Promise((resolve, reject) => {
-      const end = Date.now() + ms;
-      const tick = () => {
-        if (ctl && ctl.aborted) return reject(new AbortedError());
-        const left = end - Date.now();
-        if (left <= 0) return resolve();
-        setTimeout(tick, Math.min(left, 250));
-      };
-      tick();
-    });
-  }
 
   function extract(text) {
     const get = (key) => {
@@ -57,9 +33,12 @@
       const r = await fetch(ORIGIN + '/app', { credentials: 'include' });
       d = extract(await r.text());
     }
-    if (!d) throw new Error('Gemini のページ情報を取得できません。ログイン状態を確認してください。');
+    if (!d) throw fatal('Gemini のページ情報を取得できません。ログイン状態を確認してください。');
     return (cached = d);
   }
+
+  // 1分あたり約45回まで（制限は約50回/分）
+  const client = ACS.net.createClient({ minIntervalMs: 1300, onAuthError: () => pageData(true) });
 
   function parseResponse(text, id) {
     const lines = text.replace(/^\)\]\}'\n?/, '').split('\n');
@@ -82,60 +61,30 @@
     throw new Error(`応答にデータがありません (${id})`);
   }
 
-  async function rpcOnce(id, payload, path, ctl) {
-    const wait = lastCall + MIN_INTERVAL_MS - Date.now();
-    if (wait > 0) await sleep(wait, ctl);
-    lastCall = Date.now();
-
-    const d = await pageData();
-    const params = new URLSearchParams({
-      rpcids: id,
-      'source-path': path,
-      bl: d.bl,
-      'f.sid': d.sid,
-      hl: 'ja',
-      _reqid: String(reqId++),
-      rt: 'c',
-    });
-    const body =
-      `f.req=${encodeURIComponent(JSON.stringify([[[id, payload, null, 'generic']]]))}` +
-      `&at=${encodeURIComponent(d.at)}`;
-    const r = await fetch(`${ORIGIN}/_/BardChatUi/data/batchexecute?${params}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', 'X-Same-Domain': '1' },
-      credentials: 'include',
-      body,
-    });
-    if (!r.ok) {
-      const e = new Error(`HTTP ${r.status}`);
-      e.status = r.status;
-      throw e;
-    }
-    return parseResponse(await r.text(), id);
-  }
-
-  // 失敗したら待って再試行する（以前は1回の失敗で打ち切っていた → 470件止まりの一因）
-  async function rpc(id, payload, path, ctl, onRetry) {
-    let lastErr;
-    for (let i = 0; i < MAX_TRIES; i++) {
-      if (ctl && ctl.aborted) throw new AbortedError();
-      try {
-        return await rpcOnce(id, payload, path, ctl);
-      } catch (e) {
-        if (e instanceof AbortedError) throw e;
-        lastErr = e;
-        if (i === MAX_TRIES - 1) break;
-        const wait = e.status === 429 ? MAX_WAIT_MS : Math.min(2000 * 2 ** i, MAX_WAIT_MS);
-        if (onRetry) onRetry(e, wait, i + 1, MAX_TRIES);
-        await sleep(wait, ctl);
-        if ([400, 401, 403].includes(e.status)) {
-          try {
-            await pageData(true); // トークン切れの可能性 → 取り直す
-          } catch {}
-        }
-      }
-    }
-    throw lastErr;
+  function rpc(id, payload, path, opt) {
+    return client.call(async () => {
+      const d = await pageData();
+      const params = new URLSearchParams({
+        rpcids: id,
+        'source-path': path,
+        bl: d.bl,
+        'f.sid': d.sid,
+        hl: 'ja',
+        _reqid: String(reqId++),
+        rt: 'c',
+      });
+      const body =
+        `f.req=${encodeURIComponent(JSON.stringify([[[id, payload, null, 'generic']]]))}` +
+        `&at=${encodeURIComponent(d.at)}`;
+      const r = await fetch(`${ORIGIN}/_/BardChatUi/data/batchexecute?${params}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', 'X-Same-Domain': '1' },
+        credentials: 'include',
+        body,
+      });
+      if (!r.ok) throw new HttpError(r.status);
+      return parseResponse(await r.text(), id);
+    }, opt);
   }
 
   function nextToken(r) {
@@ -149,15 +98,15 @@
   }
 
   const toId = (id) => (id.startsWith('c_') ? id : 'c_' + id);
-  const urlOf = (id) => `${ORIGIN}/app/${id.replace(/^c_/, '')}`;
 
-  function conv(id, title, timeSec) {
+  function makeConv(id, title, time) {
     return {
       id: toId(id),
       title: (title || '').trim(),
-      time: timeSec ? timeSec * 1000 : 0,
-      url: urlOf(id),
+      time: ACS.net.toMs(time),
+      url: `${ORIGIN}/app/${id.replace(/^c_/, '')}`,
       platform: 'Gemini',
+      tag: '',
     };
   }
 
@@ -171,7 +120,7 @@
     try {
       for (let page = 0; page < 2000; page++) {
         const payload = tok === null ? '[]' : JSON.stringify([20, tok, [0, null, 1]]);
-        const r = await rpc('MaZiqc', payload, '/app', ctl, onRetry);
+        const r = await rpc('MaZiqc', payload, '/app', { ctl, onRetry });
         let added = 0;
         const arr = Array.isArray(r) ? r[2] : null;
         if (Array.isArray(arr)) {
@@ -180,7 +129,7 @@
             const id = toId(c[0]);
             if (seen.has(id)) continue;
             seen.add(id);
-            items.push(conv(id, typeof c[1] === 'string' ? c[1] : '', Array.isArray(c[5]) ? c[5][0] : 0));
+            items.push(makeConv(id, typeof c[1] === 'string' ? c[1] : '', Array.isArray(c[5]) ? c[5][0] : 0));
             added++;
           }
         }
@@ -195,20 +144,6 @@
     } catch (e) {
       return { items, error: e, resume: { items, tok } };
     }
-  }
-
-  // サイドバーに表示済みの会話（API一覧の取りこぼし補完用）
-  function sidebarConversations() {
-    const out = [];
-    const seen = new Set();
-    for (const a of document.querySelectorAll('a[href*="/app/"]')) {
-      const m = (a.getAttribute('href') || '').match(/\/app\/([0-9a-f]{8,})/i);
-      if (!m || seen.has(m[1])) continue;
-      seen.add(m[1]);
-      const titleEl = a.querySelector('.conversation-title') || a;
-      out.push(conv(m[1], titleEl.textContent, 0));
-    }
-    return out;
   }
 
   function modelText(o) {
@@ -237,14 +172,14 @@
     return out;
   }
 
-  async function getTurns(id, { ctl, onRetry } = {}) {
+  async function getTurns(id, opt = {}) {
     const cid = toId(id);
     const path = '/app/' + cid.replace(/^c_/, '');
     let all = [];
     let tok = null;
     const seen = new Set();
     for (let k = 0; k < 200; k++) {
-      const r = await rpc('hNvQHb', JSON.stringify([cid, 100000, tok, 1, [0], [4], null, 1]), path, ctl, onRetry);
+      const r = await rpc('hNvQHb', JSON.stringify([cid, 100000, tok, 1, [0], [4], null, 1]), path, opt);
       all = parseTurns(r).concat(all);
       const nt = Array.isArray(r) && typeof r[1] === 'string' && r[1] ? r[1] : null;
       if (!nt || seen.has(nt)) break;
@@ -254,7 +189,13 @@
     return all;
   }
 
-  ACS.AbortedError = AbortedError;
-  ACS.sleep = sleep;
-  ACS.gemini = { listConversations, sidebarConversations, getTurns, platform: 'Gemini' };
+  ACS.platforms['gemini.google.com'] = {
+    platform: 'Gemini',
+    sidebarSelector: 'conversations-list',
+    linkRe: /\/app\/([0-9a-f]{8,})/i,
+    linkTitle: (a) => (a.querySelector('.conversation-title') || a).textContent,
+    makeConv: (id, title) => makeConv(id, title, 0),
+    listConversations,
+    getTurns,
+  };
 })();
