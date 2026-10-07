@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "AI Chat Saver",
+  "version": "0.1.0",
+  "description": "Gemini の会話をまとめて Markdown / HTML で保存します。",
+  "content_scripts": [
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": [
+        "src/core/zip.js",
+        "src/core/markdown.js",
+        "src/core/exporters.js",
+        "src/platforms/gemini.js",
+        "src/content/gemini-ui.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
