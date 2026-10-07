@@ -155,6 +155,7 @@
   ACS.platforms['claude.ai'] = {
     platform: 'Claude',
     sidebarSelector: null,
+    sidebarAfter: ['a[href="/recents"]', 'a[href="/new"]'], // 「チャット」→「新しいチャット」の順に探す
     linkRe: /\/chat\/([0-9a-f-]{36})/i,
     makeConv: (id, title) => makeConv(id, title, 0),
     listConversations,

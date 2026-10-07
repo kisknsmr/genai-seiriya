@@ -98,8 +98,20 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
         if (isVisible(list) && list.parentElement) return { parent: list.parentElement, before: list, via: api.sidebarSelector };
       }
     }
+    // サイドバーの決まった項目（「チャット」など）の直後。サイドバーを畳んでいても見つかる
+    for (const sel of api.sidebarAfter || []) {
+      for (const a of document.querySelectorAll(sel)) {
+        if (!isVisible(a)) continue;
+        // 1つしか中身のない入れ物は、まとめて1項目とみなす
+        let item = a;
+        while (item.parentElement && item.parentElement !== document.body && item.parentElement.children.length === 1) {
+          item = item.parentElement;
+        }
+        if (item.parentElement) return { parent: item.parentElement, before: item.nextSibling, via: sel };
+      }
+    }
     // 予備: 会話リンクをすべて含む一番小さい箱の直前
-    const links = [...document.querySelectorAll('a[href*="/app/"]')].filter(
+    const links = [...document.querySelectorAll('a[href]')].filter(
       (a) => api.linkRe.test(a.getAttribute('href') || '') && isVisible(a)
     );
     if (links.length >= 2) {
@@ -133,7 +145,8 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
       sideBtn = h('button', { class: 'side', title: '会話を一括保存', onclick: open }, downloadIcon(), h('span', { class: 'label' }, '一括保存'));
       sideHost.attachShadow({ mode: 'open' }).append(h('style', {}, SIDE_CSS), sideBtn);
     }
-    if (sideHost.parentElement !== spot.parent || sideHost.nextSibling !== spot.before) {
+    const placed = spot.before === sideHost || (sideHost.parentElement === spot.parent && sideHost.nextSibling === spot.before);
+    if (!placed) {
       spot.parent.insertBefore(sideHost, spot.before);
       log('サイドバーにボタンを配置', spot.via);
     }
