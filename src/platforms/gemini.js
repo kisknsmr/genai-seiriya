@@ -73,7 +73,9 @@
       }
       if (!Array.isArray(j)) continue;
       for (const n of j) {
-        if (Array.isArray(n) && n[0] === 'wrb.fr' && n[1] === id && typeof n[2] === 'string') return JSON.parse(n[2]);
+        if (!Array.isArray(n) || n[0] !== 'wrb.fr' || n[1] !== id) continue;
+        // データ部分が空 = 一覧の最後のページなど。エラーではなく「中身なし」として返す
+        return typeof n[2] === 'string' ? JSON.parse(n[2]) : null;
       }
     }
     throw new Error(`応答にデータがありません (${id})`);
