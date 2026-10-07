@@ -56,14 +56,80 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
     return el;
   }
 
+  // サイドバー用ボタン。文字色は Gemini のテーマ（ライト/ダーク）を引き継ぐ
+  const SIDE_CSS = `
+:host{display:block;container-type:inline-size;margin:4px 0}
+.side{display:flex;align-items:center;gap:12px;width:100%;height:40px;padding:0 12px;border:0;border-radius:20px;
+  background:transparent;color:inherit;font:500 14px "Google Sans","Noto Sans JP","Yu Gothic UI",sans-serif;cursor:pointer;text-align:left}
+.side:hover{background:rgba(128,128,128,.14)}
+.side svg{flex:none;width:20px;height:20px;fill:currentColor}
+@container (max-width:150px){.side{width:40px;padding:0;justify-content:center}.label{display:none}}
+`;
+
+  function downloadIcon() {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', 'M12 16 7 11l1.4-1.45 2.6 2.6V4h2v8.15l2.6-2.6L17 11Zm-6 4q-.825 0-1.412-.587Q4 18.825 4 18v-3h2v3h12v-3h2v3q0 .825-.587 1.413Q18.825 20 18 20Z');
+    svg.append(path);
+    return svg;
+  }
+
   const state = { convs: [], checked: new Set(), filter: '', busy: false, ctl: null, listError: null };
-  let root, ui;
+  let root, ui, sideHost, fab;
+
+  // Gemini のサイドバー内で、会話一覧の直前を探す（見つからなければ null）
+  function findSidebarSpot() {
+    const list = document.querySelector('conversations-list');
+    if (list && list.parentElement) return { parent: list.parentElement, before: list };
+    const nav = document.querySelector('side-navigation-content, bard-sidenav');
+    if (nav) return { parent: nav, before: nav.firstChild };
+    return null;
+  }
+
+  function ensureSideButton() {
+    if (sideHost && sideHost.isConnected) return true;
+    const spot = findSidebarSpot();
+    if (!spot) return false;
+    if (!sideHost) {
+      sideHost = h('div', { id: 'ai-chat-saver-side' });
+      sideHost
+        .attachShadow({ mode: 'open' })
+        .append(
+          h('style', {}, SIDE_CSS),
+          h('button', { class: 'side', title: '会話を一括保存', onclick: open }, downloadIcon(), h('span', { class: 'label' }, '一括保存'))
+        );
+    }
+    spot.parent.insertBefore(sideHost, spot.before);
+    return true;
+  }
 
   function mount() {
     const host = h('div', { id: 'ai-chat-saver-host' });
     root = host.attachShadow({ mode: 'open' });
-    root.append(h('style', {}, CSS), h('button', { class: 'fab', title: '会話を一括保存', onclick: open }, '💾 一括保存'));
+    root.append(h('style', {}, CSS));
     document.body.append(host);
+    fab = h('button', { class: 'fab', title: '会話を一括保存', onclick: open }, '💾 一括保存');
+
+    // Gemini は画面を書き換えるため、サイドバーのボタンが消えたら付け直す。
+    // 8秒たってもサイドバーが見つからない場合だけ、右下に予備ボタンを出す。
+    const started = Date.now();
+    const sync = () => {
+      if (ensureSideButton()) fab.remove();
+      else if (!fab.isConnected && Date.now() - started > 8000) root.append(fab);
+    };
+    let pending = false;
+    new MutationObserver(() => {
+      if (pending) return;
+      pending = true;
+      setTimeout(() => {
+        pending = false;
+        sync();
+      }, 300);
+    }).observe(document.body, { childList: true, subtree: true });
+    sync();
+    setTimeout(sync, 8100);
   }
 
   function buildPanel() {
