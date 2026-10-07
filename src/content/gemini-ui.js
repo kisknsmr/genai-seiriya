@@ -58,12 +58,13 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
 
   // サイドバー用ボタン。文字色は Gemini のテーマ（ライト/ダーク）を引き継ぐ
   const SIDE_CSS = `
-:host{display:block;container-type:inline-size;margin:4px 0}
-.side{display:flex;align-items:center;gap:12px;width:100%;height:40px;padding:0 12px;border:0;border-radius:20px;
+:host{display:block;margin:4px 0}
+.side{display:flex;align-items:center;gap:12px;width:100%;min-width:40px;height:40px;padding:0 12px;border:0;border-radius:20px;
   background:transparent;color:inherit;font:500 14px "Google Sans","Noto Sans JP","Yu Gothic UI",sans-serif;cursor:pointer;text-align:left}
 .side:hover{background:rgba(128,128,128,.14)}
 .side svg{flex:none;width:20px;height:20px;fill:currentColor}
-@container (max-width:150px){.side{width:40px;padding:0;justify-content:center}.label{display:none}}
+.side.compact{width:40px;padding:0;justify-content:center}
+.side.compact .label{display:none}
 `;
 
   function downloadIcon() {
@@ -77,32 +78,50 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
   }
 
   const state = { convs: [], checked: new Set(), filter: '', busy: false, ctl: null, listError: null };
-  let root, ui, sideHost, fab;
+  let root, ui, sideHost, sideBtn, fab;
 
-  // Gemini のサイドバー内で、会話一覧の直前を探す（見つからなければ null）
+  const log = (...a) => console.info('[AI Chat Saver]', ...a);
+
+  function isVisible(el) {
+    if (!el || !el.isConnected) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  }
+
+  const CONV_LINK_RE = /\/app\/[0-9a-f]{8,}/i;
+
+  // サイドバー内で「会話一覧の直前」を探す。見えている場所だけを対象にする
   function findSidebarSpot() {
-    const list = document.querySelector('conversations-list');
-    if (list && list.parentElement) return { parent: list.parentElement, before: list };
-    const nav = document.querySelector('side-navigation-content, bard-sidenav');
-    if (nav) return { parent: nav, before: nav.firstChild };
+    for (const list of document.querySelectorAll('conversations-list')) {
+      if (isVisible(list) && list.parentElement) return { parent: list.parentElement, before: list, via: 'conversations-list' };
+    }
+    // 予備: 会話リンクをすべて含む一番小さい箱の直前
+    const links = [...document.querySelectorAll('a[href*="/app/"]')].filter(
+      (a) => CONV_LINK_RE.test(a.getAttribute('href') || '') && isVisible(a)
+    );
+    if (links.length >= 2) {
+      let box = links[0].parentElement;
+      while (box && !links.every((a) => box.contains(a))) box = box.parentElement;
+      if (box && box !== document.body && box.parentElement) return { parent: box.parentElement, before: box, via: 'links' };
+    }
     return null;
   }
 
+  // 戻り値: サイドバーのボタンが実際に見えているか
   function ensureSideButton() {
-    if (sideHost && sideHost.isConnected) return true;
+    if (isVisible(sideHost)) return true;
     const spot = findSidebarSpot();
     if (!spot) return false;
     if (!sideHost) {
       sideHost = h('div', { id: 'ai-chat-saver-side' });
-      sideHost
-        .attachShadow({ mode: 'open' })
-        .append(
-          h('style', {}, SIDE_CSS),
-          h('button', { class: 'side', title: '会話を一括保存', onclick: open }, downloadIcon(), h('span', { class: 'label' }, '一括保存'))
-        );
+      sideBtn = h('button', { class: 'side', title: '会話を一括保存', onclick: open }, downloadIcon(), h('span', { class: 'label' }, '一括保存'));
+      sideHost.attachShadow({ mode: 'open' }).append(h('style', {}, SIDE_CSS), sideBtn);
     }
-    spot.parent.insertBefore(sideHost, spot.before);
-    return true;
+    if (sideHost.parentElement !== spot.parent || sideHost.nextSibling !== spot.before) {
+      spot.parent.insertBefore(sideHost, spot.before);
+      log('サイドバーにボタンを配置', spot.via);
+    }
+    return isVisible(sideHost);
   }
 
   function mount() {
@@ -111,13 +130,20 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
     root.append(h('style', {}, CSS));
     document.body.append(host);
     fab = h('button', { class: 'fab', title: '会話を一括保存', onclick: open }, '💾 一括保存');
+    log('読み込み完了');
 
-    // Gemini は画面を書き換えるため、サイドバーのボタンが消えたら付け直す。
-    // 8秒たってもサイドバーが見つからない場合だけ、右下に予備ボタンを出す。
+    // Gemini は画面を書き換えるため、ボタンが消えたら付け直す。
+    // サイドバーのボタンが見えない間（サイドバーを閉じている時など）は右下に予備ボタンを出す。
     const started = Date.now();
     const sync = () => {
-      if (ensureSideButton()) fab.remove();
-      else if (!fab.isConnected && Date.now() - started > 8000) root.append(fab);
+      if (ensureSideButton()) {
+        fab.remove();
+        const w = sideHost.parentElement.getBoundingClientRect().width;
+        sideBtn.classList.toggle('compact', w < 150);
+      } else if (!fab.isConnected && Date.now() - started > 3000) {
+        root.append(fab);
+        log('サイドバーが見つからないため右下に表示');
+      }
     };
     let pending = false;
     new MutationObserver(() => {
@@ -129,7 +155,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
       }, 300);
     }).observe(document.body, { childList: true, subtree: true });
     sync();
-    setTimeout(sync, 8100);
+    setInterval(sync, 2000);
   }
 
   function buildPanel() {
