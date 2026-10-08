@@ -90,7 +90,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
   const state = { convs: [], checked: new Set(), knownIds: new Set(), filter: '', busy: false, ctl: null, listResume: null };
   let root, ui, sideHost, sideBtn, fab;
 
-  const log = (...a) => console.info('[AI Chat Saver]', ...a);
+  const log = (...a) => console.info('[生成AI整理屋さん]', ...a);
 
   function isVisible(el) {
     if (!el || !el.isConnected) return false;
@@ -149,7 +149,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
     const spot = findSidebarSpot();
     if (!spot) return false;
     if (!sideHost) {
-      sideHost = h('div', { id: 'ai-chat-saver-side' });
+      sideHost = h('div', { id: 'genai-seiriya-side' });
       sideBtn = h('button', { class: 'side', title: '会話を一括保存', onclick: open }, downloadIcon(), h('span', { class: 'label' }, '一括保存'));
       sideHost.attachShadow({ mode: 'open' }).append(h('style', {}, SIDE_CSS), sideBtn);
     }
@@ -162,7 +162,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
   }
 
   function mount() {
-    const host = h('div', { id: 'ai-chat-saver-host' });
+    const host = h('div', { id: 'genai-seiriya-host' });
     root = host.attachShadow({ mode: 'open' });
     root.append(h('style', {}, CSS));
     document.body.append(host);

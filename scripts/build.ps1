@@ -1,4 +1,4 @@
-﻿# 配布用 ZIP（dist/ai-chat-saver-v<バージョン>.zip）を作るスクリプト。
+﻿# 配布用 ZIP（dist/genai-seiriya-v<バージョン>.zip）を作るスクリプト。
 # 使い方: powershell -ExecutionPolicy Bypass -File scripts/build.ps1
 # Mac などでも正しく展開できるよう、ZIP 内のパス区切りは「/」にする。
 Add-Type -AssemblyName System.IO.Compression
@@ -10,7 +10,7 @@ $version = $manifest.version
 
 $dist = Join-Path $root 'dist'
 New-Item -ItemType Directory -Force $dist | Out-Null
-$zipPath = Join-Path $dist "ai-chat-saver-v$version.zip"
+$zipPath = Join-Path $dist "genai-seiriya-v$version.zip"
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force -Confirm:$false }
 
 $include = @('manifest.json', 'README.md', 'PRIVACY.md', 'LICENSE', 'icons', 'src')
@@ -22,7 +22,7 @@ try {
     $files = if ((Get-Item $full).PSIsContainer) { Get-ChildItem $full -Recurse -File } else { Get-Item $full }
     foreach ($f in $files) {
       $rel = $f.FullName.Substring($root.Length + 1).Replace('\', '/')
-      [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $f.FullName, "ai-chat-saver/$rel") | Out-Null
+      [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $f.FullName, "genai-seiriya/$rel") | Out-Null
     }
   }
 } finally {

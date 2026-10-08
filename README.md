@@ -1,4 +1,4 @@
-# AI Chat Saver
+# 生成AI整理屋さん
 
 AI チャットの会話をまとめて保存する Chrome 拡張機能です。
 **Gemini / ChatGPT / Claude** に対応しています。
@@ -28,10 +28,10 @@ Claude のアーティファクトは、中身をコードブロックとして�
 
 ## インストール
 
-1. [Releases](../../releases) から `ai-chat-saver-v<バージョン>.zip` をダウンロードし、展開する
+1. [Releases](../../releases) から `genai-seiriya-v<バージョン>.zip` をダウンロードし、展開する
 2. Chrome で `chrome://extensions` を開く
 3. 右上の「デベロッパー モード」をオン
-4. 「パッケージ化されていない拡張機能を読み込む」で、展開した `ai-chat-saver` フォルダを選ぶ
+4. 「パッケージ化されていない拡張機能を読み込む」で、展開した `genai-seiriya` フォルダを選ぶ
 
 > 更新するときは、新しい ZIP を同じ場所に展開し直し、`chrome://extensions` で再読み込み（↻）を押します。
 
@@ -80,7 +80,7 @@ src/content/ui.js          ボタンとパネル（全サービス共通）
 
 1. `manifest.json` の `version` を上げる
 2. PowerShell で `powershell -ExecutionPolicy Bypass -File scripts/build.ps1` を実行
-3. `dist/ai-chat-saver-v<バージョン>.zip` を GitHub の Releases に添付する
+3. `dist/genai-seiriya-v<バージョン>.zip` を GitHub の Releases に添付する
 
 ## プライバシー
 
