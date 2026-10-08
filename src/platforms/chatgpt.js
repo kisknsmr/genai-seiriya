@@ -223,10 +223,17 @@
 
   ACS.platforms['chatgpt.com'] = {
     platform: 'ChatGPT',
-    // 「新しいチャット」の直後。会話が0件でも必ずある項目なので、ここを目印にする
+    // サイドバー見出しの「検索」アイコンの左。会話が0件でも必ずある場所なので、ここを目印にする
+    sidebarSpot: () => {
+      const close = document.querySelector('#sidebar-header [data-testid="close-sidebar-button"]');
+      const group = close && close.parentElement;
+      const first = group && [...group.children].find((el) => el.id !== 'genai-seiriya-side');
+      return first ? { parent: group, before: group.firstElementChild, via: 'sidebar-header', ref: first, iconOnly: true } : null;
+    },
+    // 予備: 「新しいチャット」の直後
     sidebarAfter: ['aside a[data-testid="create-new-chat-button"]', 'a[data-testid="create-new-chat-button"]'],
     sidebarSelector: '#history', // 予備: 会話一覧の直前
-    matchSideLook: true, // ボタンの形を「新しいチャット」にそろえる
+    matchSideLook: true, // ボタンの形を隣の項目（「検索」アイコンなど）にそろえる
     linkRe: /\/c\/([0-9a-f-]{36})/i,
     makeConv: (id, title) => makeConv(id, title, 0),
     listConversations,

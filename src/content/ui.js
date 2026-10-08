@@ -85,7 +85,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
   }
 
   const state = { convs: [], checked: new Set(), knownIds: new Set(), filter: '', busy: false, ctl: null, listResume: null };
-  let root, ui, sideHost, sideBtn, sideRef;
+  let rootHost, root, ui, sideHost, sideBtn, sideRef, sideIconOnly;
 
   const log = (...a) => console.info('[生成AI整理屋さん]', ...a);
 
@@ -157,6 +157,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
       sideHost.attachShadow({ mode: 'open' }).append(h('style', {}, SIDE_CSS), sideBtn);
     }
     sideRef = spot.ref || null;
+    sideIconOnly = !!spot.iconOnly;
     const placed = spot.before === sideHost || (sideHost.parentElement === spot.parent && sideHost.nextSibling === spot.before);
     if (!placed) {
       spot.parent.insertBefore(sideHost, spot.before);
@@ -171,6 +172,8 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
     const cs = getComputedStyle(ref);
     const s = sideBtn.style;
     for (const k of ['height', 'borderRadius', 'fontFamily', 'fontSize', 'fontWeight', 'lineHeight']) s[k] = cs[k];
+    // アイコンだけの並びでは、隣のアイコンと同じ色（薄めの灰色など）にする
+    s.color = sideIconOnly ? cs.color : '';
     s.gap = cs.columnGap && cs.columnGap !== 'normal' ? cs.columnGap : '';
     s.width = compact ? cs.width : '';
     s.paddingLeft = compact ? '0' : cs.paddingLeft;
@@ -186,10 +189,10 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
   }
 
   function mount() {
-    const host = h('div', { id: 'genai-seiriya-host' });
-    root = host.attachShadow({ mode: 'open' });
+    rootHost = h('div', { id: 'genai-seiriya-host' });
+    root = rootHost.attachShadow({ mode: 'open' });
     root.append(h('style', {}, CSS));
-    document.body.append(host);
+    document.body.append(rootHost);
     log('読み込み完了');
 
     // サイトは画面を何度も書き換えるため、ボタンが消えたら付け直す。
@@ -197,7 +200,8 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
     const sync = () => {
       if (ensureSideButton()) {
         const w = sideHost.parentElement.getBoundingClientRect().width;
-        const compact = w < 150;
+        // アイコンだけの並び（ChatGPT の見出しなど）では、幅に関係なく常にアイコンだけにする
+        const compact = sideIconOnly || w < 150;
         sideBtn.classList.toggle('compact', compact);
         if (api.matchSideLook) {
           if (!sideRef || !sideRef.isConnected) sideRef = (findSidebarSpot() || {}).ref || null;
@@ -277,6 +281,11 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
   }
 
   function open() {
+    // ChatGPT などは読み込み途中に画面を作り直し、パネルの入れ物を消すことがある。消えていたら付け直す
+    if (!rootHost.isConnected) {
+      document.body.append(rootHost);
+      log('パネルの入れ物を付け直し');
+    }
     if (!ui) ui = buildPanel();
     root.append(ui.overlay);
     if (!state.convs.length && !state.busy) loadList();
