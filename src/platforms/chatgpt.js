@@ -223,7 +223,10 @@
 
   ACS.platforms['chatgpt.com'] = {
     platform: 'ChatGPT',
-    sidebarSelector: '#history',
+    // 「新しいチャット」の直後。会話が0件でも必ずある項目なので、ここを目印にする
+    sidebarAfter: ['aside a[data-testid="create-new-chat-button"]', 'a[data-testid="create-new-chat-button"]'],
+    sidebarSelector: '#history', // 予備: 会話一覧の直前
+    matchSideLook: true, // ボタンの形を「新しいチャット」にそろえる
     linkRe: /\/c\/([0-9a-f-]{36})/i,
     makeConv: (id, title) => makeConv(id, title, 0),
     listConversations,

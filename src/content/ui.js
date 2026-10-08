@@ -98,10 +98,10 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
 
   // サイドバー内で「会話一覧の直前」を探す。見えている場所だけを対象にする
   function findSidebarSpot() {
-    if (api.sidebarSelector) {
-      for (const list of document.querySelectorAll(api.sidebarSelector)) {
-        if (isVisible(list) && list.parentElement) return { parent: list.parentElement, before: list, via: api.sidebarSelector };
-      }
+    // サイト独自の置き場所（Gemini の「チャット」見出しの直前など）
+    if (api.sidebarSpot) {
+      const spot = api.sidebarSpot();
+      if (spot && isVisible(spot.before)) return spot;
     }
     // サイドバーの決まった項目（「チャット」など）の直後。サイドバーを畳んでいても見つかる
     for (const sel of api.sidebarAfter || []) {
@@ -113,6 +113,12 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
           item = item.parentElement;
         }
         if (item.parentElement) return { parent: item.parentElement, before: item.nextSibling, via: sel, ref: a };
+      }
+    }
+    // 予備: 会話一覧の直前
+    if (api.sidebarSelector) {
+      for (const list of document.querySelectorAll(api.sidebarSelector)) {
+        if (isVisible(list) && list.parentElement) return { parent: list.parentElement, before: list, via: api.sidebarSelector };
       }
     }
     // 予備: 会話リンクをすべて含む一番小さい箱の直前
@@ -141,10 +147,10 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
   }
 
   // 戻り値: サイドバーのボタンが実際に見えているか
+  // 毎回「今いちばん良い場所」を探し、違う場所にいれば移す（読み込み途中で予備の場所に置かれた時など）
   function ensureSideButton() {
-    if (isVisible(sideHost)) return true;
     const spot = findSidebarSpot();
-    if (!spot) return false;
+    if (!spot) return isVisible(sideHost);
     if (!sideHost) {
       sideHost = h('div', { id: 'genai-seiriya-side' });
       sideBtn = h('button', { class: 'side', title: '会話を一括保存', onclick: open }, downloadIcon(), h('span', { class: 'label' }, '一括保存'));

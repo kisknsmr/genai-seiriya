@@ -203,7 +203,13 @@
 
   ACS.platforms['gemini.google.com'] = {
     platform: 'Gemini',
-    sidebarSelector: 'conversations-list',
+    // 「チャット」見出しの直前。会話が0件でも見出しは出るので、ここを目印にする
+    sidebarSpot: () => {
+      const sec = document.querySelector('expandable-section[data-test-id="chats-expandable-section"]');
+      const box = sec && (sec.closest('infinite-scroller') || sec);
+      return box && box.parentElement ? { parent: box.parentElement, before: box, via: 'chats-expandable-section' } : null;
+    },
+    sidebarSelector: 'conversations-list', // 予備: 会話一覧の直前
     linkRe: /\/app\/([0-9a-f]{8,})/i,
     linkTitle: (a) => (a.querySelector('.conversation-title') || a).textContent,
     makeConv: (id, title) => makeConv(id, title, 0),
