@@ -12,9 +12,6 @@
   const CSS = `
 :host{all:initial}
 *{box-sizing:border-box;font-family:"Google Sans","Noto Sans JP","Yu Gothic UI",Meiryo,sans-serif}
-.fab{position:fixed;right:20px;bottom:88px;z-index:2147483000;border:0;border-radius:24px;padding:10px 16px;
-  background:#0b57d0;color:#fff;font-size:14px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.25)}
-.fab:hover{background:#0842a0}
 .overlay{position:fixed;inset:0;z-index:2147483001;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center}
 .panel{position:relative;width:min(720px,94vw);height:min(80vh,760px);background:#fff;color:#1f1f1f;border-radius:16px;display:flex;flex-direction:column;
   box-shadow:0 8px 32px rgba(0,0,0,.3);overflow:hidden;font-size:14px}
@@ -88,7 +85,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
   }
 
   const state = { convs: [], checked: new Set(), knownIds: new Set(), filter: '', busy: false, ctl: null, listResume: null };
-  let root, ui, sideHost, sideBtn, fab;
+  let root, ui, sideHost, sideBtn, sideRef;
 
   const log = (...a) => console.info('[生成AI整理屋さん]', ...a);
 
@@ -115,7 +112,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
         while (item.parentElement && item.parentElement !== document.body && item.parentElement.children.length === 1) {
           item = item.parentElement;
         }
-        if (item.parentElement) return { parent: item.parentElement, before: item.nextSibling, via: sel };
+        if (item.parentElement) return { parent: item.parentElement, before: item.nextSibling, via: sel, ref: a };
       }
     }
     // 予備: 会話リンクをすべて含む一番小さい箱の直前
@@ -153,6 +150,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
       sideBtn = h('button', { class: 'side', title: '会話を一括保存', onclick: open }, downloadIcon(), h('span', { class: 'label' }, '一括保存'));
       sideHost.attachShadow({ mode: 'open' }).append(h('style', {}, SIDE_CSS), sideBtn);
     }
+    sideRef = spot.ref || null;
     const placed = spot.before === sideHost || (sideHost.parentElement === spot.parent && sideHost.nextSibling === spot.before);
     if (!placed) {
       spot.parent.insertBefore(sideHost, spot.before);
@@ -161,25 +159,44 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
     return isVisible(sideHost);
   }
 
+  // 隣の項目（ref）を実際に測り、高さ・余白・角の丸み・文字・アイコンの大きさを写す。
+  // サイトごとに数値を決め打ちしないので、サイト側の見た目が変わっても追従する
+  function matchLook(ref, compact) {
+    const cs = getComputedStyle(ref);
+    const s = sideBtn.style;
+    for (const k of ['height', 'borderRadius', 'fontFamily', 'fontSize', 'fontWeight', 'lineHeight']) s[k] = cs[k];
+    s.gap = cs.columnGap && cs.columnGap !== 'normal' ? cs.columnGap : '';
+    s.width = compact ? cs.width : '';
+    s.paddingLeft = compact ? '0' : cs.paddingLeft;
+    s.paddingRight = compact ? '0' : cs.paddingRight;
+    const icon = ref.querySelector('svg');
+    const r = icon && icon.getBoundingClientRect();
+    if (r && r.width > 0) {
+      const svg = sideBtn.querySelector('svg');
+      svg.style.width = r.width + 'px';
+      svg.style.height = r.height + 'px';
+    }
+    sideHost.style.margin = '0';
+  }
+
   function mount() {
     const host = h('div', { id: 'genai-seiriya-host' });
     root = host.attachShadow({ mode: 'open' });
     root.append(h('style', {}, CSS));
     document.body.append(host);
-    fab = h('button', { class: 'fab', title: '会話を一括保存', onclick: open }, '💾 一括保存');
     log('読み込み完了');
 
     // サイトは画面を何度も書き換えるため、ボタンが消えたら付け直す。
-    // サイドバーのボタンが見えない間（サイドバーを閉じている時など）は右下に予備ボタンを出す。
-    const started = Date.now();
+    // サイドバーが無い画面（シークレットチャット等）ではボタンを出さない
     const sync = () => {
       if (ensureSideButton()) {
-        fab.remove();
         const w = sideHost.parentElement.getBoundingClientRect().width;
-        sideBtn.classList.toggle('compact', w < 150);
-      } else if (!fab.isConnected && Date.now() - started > 3000) {
-        root.append(fab);
-        log('サイドバーが見つからないため右下に表示');
+        const compact = w < 150;
+        sideBtn.classList.toggle('compact', compact);
+        if (api.matchSideLook) {
+          if (!sideRef || !sideRef.isConnected) sideRef = (findSidebarSpot() || {}).ref || null;
+          if (sideRef) matchLook(sideRef, compact);
+        }
       }
     };
     let pending = false;

@@ -171,6 +171,7 @@
     platform: 'Claude',
     sidebarSelector: null,
     sidebarAfter: ['a[href="/recents"]', 'a[href="/new"]'], // 「チャット」→「新しいチャット」の順に探す
+    matchSideLook: true, // ボタンの形を隣の「チャット」項目にそろえる
     linkRe: /\/chat\/([0-9a-f-]{36})/i,
     makeConv: (id, title) => makeConv(id, title, 0),
     listConversations,
