@@ -16,9 +16,9 @@
   background:#0b57d0;color:#fff;font-size:14px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.25)}
 .fab:hover{background:#0842a0}
 .overlay{position:fixed;inset:0;z-index:2147483001;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center}
-.panel{width:min(720px,94vw);height:min(80vh,760px);background:#fff;color:#1f1f1f;border-radius:16px;display:flex;flex-direction:column;
+.panel{position:relative;width:min(720px,94vw);height:min(80vh,760px);background:#fff;color:#1f1f1f;border-radius:16px;display:flex;flex-direction:column;
   box-shadow:0 8px 32px rgba(0,0,0,.3);overflow:hidden;font-size:14px}
-@media (prefers-color-scheme:dark){.panel{background:#1e1f20;color:#e3e3e3}.row:hover{background:#2a2b2d!important}
+@media (prefers-color-scheme:dark){.panel,.dlg{background:#1e1f20;color:#e3e3e3}.row:hover{background:#2a2b2d!important}
   input[type=search]{background:#131314;color:#e3e3e3;border-color:#444!important}.btn{background:#2a2b2d!important;color:#e3e3e3!important}}
 .head{display:flex;align-items:center;padding:16px 20px;border-bottom:1px solid rgba(128,128,128,.25)}
 .head h2{flex:1;margin:0;font-size:18px;font-weight:500}
@@ -44,6 +44,14 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
 .bar>div{height:100%;width:0;background:#0b57d0;transition:width .3s}
 .status{font-size:13px;min-height:18px;white-space:pre-wrap}
 .warn{color:#b3261e}
+.danger{background:#b3261e!important;color:#fff!important}
+.dlg-back{position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px}
+.dlg{width:min(480px,100%);max-height:100%;overflow:auto;background:#fff;border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:12px;
+  box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.dlg h3{margin:0;font-size:16px;font-weight:500}
+.dlg ul{margin:0;padding-left:20px;font-size:13px;opacity:.85}
+.dlg li{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dlg .btns{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
 `;
 
   function h(tag, props = {}, ...kids) {
@@ -202,6 +210,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
     const html = h('input', { type: 'checkbox', checked: true });
     const saveBtn = h('button', { class: 'btn primary', onclick: save }, '保存する');
     const stopBtn = h('button', { class: 'btn', onclick: stop, disabled: true }, '中止');
+    const delBtn = h('button', { class: 'btn danger', onclick: askDelete, title: '選んだ会話をサービス上から削除します' }, '削除する');
     const reloadBtn = h('button', { class: 'btn', onclick: loadList }, '再読み込み');
     const barFill = h('div');
     const status = h('div', { class: 'status' });
@@ -233,6 +242,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
             h('span', { class: 'spacer' }),
             count,
             stopBtn,
+            api.deleteConversation ? delBtn : null,
             saveBtn
           ),
           h('div', { class: 'bar' }, barFill),
@@ -240,7 +250,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
         )
       )
     );
-    return { overlay, list, count, md, html, saveBtn, stopBtn, reloadBtn, barFill, status, search };
+    return { overlay, panel: overlay.firstChild, list, count, md, html, saveBtn, stopBtn, delBtn, reloadBtn, barFill, status, search };
   }
 
   function open() {
@@ -262,6 +272,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
   function setBusy(busy) {
     state.busy = busy;
     ui.saveBtn.disabled = busy;
+    ui.delBtn.disabled = busy;
     ui.reloadBtn.disabled = busy;
     ui.stopBtn.disabled = !busy;
   }
@@ -360,15 +371,26 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 
-  async function save() {
-    const targets = state.convs.filter((c) => state.checked.has(c.id));
-    const wantMd = ui.md.checked;
-    const wantHtml = ui.html.checked;
-    if (!targets.length) return setStatus('保存する会話を選んでください。', true);
-    if (!wantMd && !wantHtml) return setStatus('保存形式を1つ以上選んでください。', true);
+  const selected = () => state.convs.filter((c) => state.checked.has(c.id));
+  const formatError = () => (!ui.md.checked && !ui.html.checked ? '保存形式を1つ以上選んでください。' : '');
 
+  async function save() {
+    const targets = selected();
+    if (!targets.length) return setStatus('保存する会話を選んでください。', true);
+    if (formatError()) return setStatus(formatError(), true);
     state.ctl = { aborted: false };
     setBusy(true);
+    try {
+      await exportConvs(targets);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // 会話を取得して ZIP で保存する。戻り値: 保存できた会話の id の Set
+  async function exportConvs(targets) {
+    const wantMd = ui.md.checked;
+    const wantHtml = ui.html.checked;
     const files = [];
     const entries = [];
     let failed = [];
@@ -386,7 +408,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
       entries.push({ conv: c, base });
     };
 
-    try {
+    {
       // 1周目: 全件を順に取得。失敗しても止まらず次へ進む
       for (const c of targets) {
         if (state.ctl.aborted) break;
@@ -426,7 +448,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
 
       if (!entries.length) {
         setStatus(state.ctl.aborted ? '中止しました。保存した会話はありません。' : '保存できた会話がありません。', true);
-        return;
+        return new Set();
       }
       entries.sort((a, b) => b.conv.time - a.conv.time);
       if (wantHtml) files.push({ name: 'index.html', data: ex.indexHtml(entries, api.platform) });
@@ -440,8 +462,108 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
       if (state.ctl.aborted) msg = `中止しました。それまでの ${entries.length} 件を保存しました。`;
       if (failed.length) msg += `\n${failed.length} 件は2回挑戦しても取得できませんでした（ZIP内の errors.txt を参照）。`;
       setStatus(msg, failed.length > 0);
+      return new Set(entries.map((x) => x.conv.id));
+    }
+  }
+
+  // ---- 削除 ----
+
+  // 確認画面。選択肢: キャンセル / 削除のみ / 保存してから削除
+  function askDelete() {
+    const targets = selected();
+    if (!targets.length) return setStatus('削除する会話を選んでください。', true);
+    const shown = targets.slice(0, 5);
+    const back = h('div', { class: 'dlg-back' });
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      closeDlg();
+    };
+    const closeDlg = () => {
+      back.remove();
+      document.removeEventListener('keydown', onKey, true);
+    };
+    const choose = (withSave) => () => {
+      if (withSave && formatError()) return alert(formatError());
+      closeDlg();
+      runDelete(targets, withSave);
+    };
+    const cancel = h('button', { class: 'btn', onclick: closeDlg }, 'キャンセル');
+    back.append(
+      h(
+        'div',
+        { class: 'dlg', role: 'dialog' },
+        h('h3', {}, `${targets.length} 件の会話を ${api.platform} から削除します`),
+        h(
+          'ul',
+          {},
+          shown.map((c) => h('li', { title: c.title }, c.title || '(無題)')),
+          targets.length > shown.length ? h('li', {}, `ほか ${targets.length - shown.length} 件`) : null
+        ),
+        h('div', { class: 'warn' }, '削除した会話は元に戻せません。心配な場合は「保存してから削除」を選んでください（保存に失敗した会話は削除しません）。'),
+        h(
+          'div',
+          { class: 'btns' },
+          cancel,
+          h('button', { class: 'btn danger', onclick: choose(false) }, '削除のみ'),
+          h('button', { class: 'btn primary', onclick: choose(true) }, '保存してから削除')
+        )
+      )
+    );
+    back.addEventListener('click', (e) => e.target === back && closeDlg());
+    document.addEventListener('keydown', onKey, true);
+    ui.panel.append(back);
+    cancel.focus();
+  }
+
+  async function runDelete(targets, withSave) {
+    state.ctl = { aborted: false };
+    setBusy(true);
+    try {
+      let list = targets;
+      let saveMsg = '';
+      if (withSave) {
+        const saved = await exportConvs(targets);
+        saveMsg = ui.status.textContent;
+        list = targets.filter((c) => saved.has(c.id));
+        if (state.ctl.aborted || !list.length) {
+          setStatus(`${saveMsg}\n削除は行いませんでした。`, true);
+          return;
+        }
+      }
+      setBar(0);
+      const deleted = new Set();
+      const failed = [];
+      for (let i = 0; i < list.length; i++) {
+        const c = list[i];
+        if (state.ctl.aborted) break;
+        progress(`削除中 ${i + 1} / ${list.length}：${c.title || '(無題)'}`);
+        try {
+          await api.deleteConversation(c.id, { ctl: state.ctl, onRetry: retryNote });
+          deleted.add(c.id);
+        } catch (e) {
+          if (e instanceof ACS.AbortedError) break;
+          failed.push({ c, e });
+        }
+        setBar((i + 1) / list.length);
+      }
+      state.convs = state.convs.filter((c) => !deleted.has(c.id));
+      for (const id of deleted) {
+        state.checked.delete(id);
+        state.knownIds.delete(id);
+      }
+      let msg = saveMsg ? saveMsg + '\n' : '';
+      msg += state.ctl.aborted ? `削除を中止しました。それまでの ${deleted.size} 件を削除しました。` : `${deleted.size} 件を削除しました。`;
+      if (list.length < targets.length) msg += `\n保存できなかった ${targets.length - list.length} 件は削除していません。`;
+      if (failed.length) {
+        msg += `\n${failed.length} 件は削除できませんでした（${failed[0].e.message}）。選択したまま残しています。`;
+        log('削除に失敗', failed);
+      }
+      if (deleted.size) msg += '\nサイドバーの表示は、ページを再読み込みすると更新されます。';
+      setStatus(msg, failed.length > 0 || state.ctl.aborted);
     } finally {
       setBusy(false);
+      renderList();
     }
   }
 

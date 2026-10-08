@@ -2,7 +2,7 @@
 // 一覧は「通常 → アーカイブ → プロジェクト内」の順に読み込む。
 (() => {
   const ACS = window.ACS;
-  const { fatal, fetchJson, toMs } = ACS.net;
+  const { fatal, fetchOk, fetchJson, toMs } = ACS.net;
 
   const ORIGIN = 'https://chatgpt.com';
   const PAGE = 100;
@@ -204,6 +204,23 @@
     return turns;
   }
 
+  // 画面の「削除」と同じ操作（非表示にする＝ChatGPT 上では削除扱い）。
+  // 既に消えている会話（404）は削除済みとみなす
+  async function deleteConversation(id, opt = {}) {
+    try {
+      await client.call(async () => {
+        await auth();
+        await fetchOk(`${ORIGIN}/backend-api/conversation/${id}`, {
+          method: 'PATCH',
+          headers: { ...headers(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_visible: false }),
+        });
+      }, opt);
+    } catch (e) {
+      if (e.status !== 404) throw e;
+    }
+  }
+
   ACS.platforms['chatgpt.com'] = {
     platform: 'ChatGPT',
     sidebarSelector: '#history',
@@ -211,5 +228,6 @@
     makeConv: (id, title) => makeConv(id, title, 0),
     listConversations,
     getTurns,
+    deleteConversation,
   };
 })();

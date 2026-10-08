@@ -2,7 +2,7 @@
 // まず自分の組織ID（アカウント番号）を調べ、そこから一覧と本文を取る。
 (() => {
   const ACS = window.ACS;
-  const { fatal, fetchJson, toMs } = ACS.net;
+  const { fatal, fetchOk, fetchJson, toMs } = ACS.net;
 
   const ORIGIN = 'https://claude.ai';
   const PAGE = 100;
@@ -152,6 +152,21 @@
     return turns;
   }
 
+  // 既に消えている会話（404）は削除済みとみなす
+  async function deleteConversation(id, opt = {}) {
+    try {
+      await client.call(async () => {
+        const o = await getOrg();
+        await fetchOk(`${ORIGIN}/api/organizations/${o}/chat_conversations/${id}`, {
+          method: 'DELETE',
+          headers: { Accept: 'application/json' },
+        });
+      }, opt);
+    } catch (e) {
+      if (e.status !== 404) throw e;
+    }
+  }
+
   ACS.platforms['claude.ai'] = {
     platform: 'Claude',
     sidebarSelector: null,
@@ -160,5 +175,6 @@
     makeConv: (id, title) => makeConv(id, title, 0),
     listConversations,
     getTurns,
+    deleteConversation,
   };
 })();

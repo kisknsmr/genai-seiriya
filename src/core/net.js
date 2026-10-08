@@ -69,7 +69,8 @@
     return { call };
   }
 
-  async function fetchJson(url, init = {}) {
+  // 失敗（200番台以外）なら HttpError を投げる。中身は読まない
+  async function fetchOk(url, init = {}) {
     const r = await fetch(url, { credentials: 'include', ...init });
     if (!r.ok) {
       const e = new HttpError(r.status);
@@ -77,7 +78,11 @@
       if (ra && /^\d+$/.test(ra)) e.retryAfterMs = Math.min(Number(ra) * 1000, 300000);
       throw e;
     }
-    return r.json();
+    return r;
+  }
+
+  async function fetchJson(url, init = {}) {
+    return (await fetchOk(url, init)).json();
   }
 
   // 秒・ミリ秒・日付文字列のどれでもミリ秒にそろえる
@@ -87,7 +92,7 @@
     return 0;
   }
 
-  ACS.net = { AbortedError, HttpError, sleep, fatal, createClient, fetchJson, toMs };
+  ACS.net = { AbortedError, HttpError, sleep, fatal, createClient, fetchOk, fetchJson, toMs };
   ACS.AbortedError = AbortedError;
   ACS.sleep = sleep;
   ACS.platforms = ACS.platforms || {};

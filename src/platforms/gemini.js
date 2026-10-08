@@ -61,7 +61,8 @@
     throw new Error(`応答にデータがありません (${id})`);
   }
 
-  function rpc(id, payload, path, opt) {
+  // raw = true のときは応答の中身を読まず、成功したかだけを見る（削除など）
+  function rpc(id, payload, path, opt, raw = false) {
     return client.call(async () => {
       const d = await pageData();
       const params = new URLSearchParams({
@@ -83,7 +84,7 @@
         body,
       });
       if (!r.ok) throw new HttpError(r.status);
-      return parseResponse(await r.text(), id);
+      return raw ? true : parseResponse(await r.text(), id);
     }, opt);
   }
 
@@ -189,6 +190,11 @@
     return all;
   }
 
+  // 画面の「削除」と同じ内部 API（GzXR5e）を呼ぶ
+  async function deleteConversation(id, opt = {}) {
+    await rpc('GzXR5e', JSON.stringify([toId(id)]), '/app', opt, true);
+  }
+
   ACS.platforms['gemini.google.com'] = {
     platform: 'Gemini',
     sidebarSelector: 'conversations-list',
@@ -197,5 +203,6 @@
     makeConv: (id, title) => makeConv(id, title, 0),
     listConversations,
     getTurns,
+    deleteConversation,
   };
 })();
