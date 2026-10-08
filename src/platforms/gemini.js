@@ -5,6 +5,12 @@
   const { HttpError, fatal } = ACS.net;
 
   const ORIGIN = 'https://gemini.google.com';
+  // 複数の Google アカウントを使い分けている時は URL が /u/1/app のようになる。
+  // その番号を付けて送らないと、別のアカウント（/u/0）の会話を操作してしまう
+  const userPath = () => {
+    const m = location.pathname.match(/^\/u\/(\d+)\//);
+    return m ? `/u/${m[1]}` : '';
+  };
 
   let reqId = 100000 + Math.floor(Math.random() * 90000);
   let cached = null;
@@ -30,7 +36,7 @@
       }
     }
     if (!d) {
-      const r = await fetch(ORIGIN + '/app', { credentials: 'include' });
+      const r = await fetch(ORIGIN + userPath() + '/app', { credentials: 'include' });
       d = extract(await r.text());
     }
     if (!d) throw fatal('Gemini のページ情報を取得できません。ログイン状態を確認してください。');
@@ -67,7 +73,7 @@
       const d = await pageData();
       const params = new URLSearchParams({
         rpcids: id,
-        'source-path': path,
+        'source-path': userPath() + path,
         bl: d.bl,
         'f.sid': d.sid,
         hl: 'ja',
@@ -77,7 +83,7 @@
       const body =
         `f.req=${encodeURIComponent(JSON.stringify([[[id, payload, null, 'generic']]]))}` +
         `&at=${encodeURIComponent(d.at)}`;
-      const r = await fetch(`${ORIGIN}/_/BardChatUi/data/batchexecute?${params}`, {
+      const r = await fetch(`${ORIGIN}${userPath()}/_/BardChatUi/data/batchexecute?${params}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', 'X-Same-Domain': '1' },
         credentials: 'include',
@@ -105,7 +111,7 @@
       id: toId(id),
       title: (title || '').trim(),
       time: ACS.net.toMs(time),
-      url: `${ORIGIN}/app/${id.replace(/^c_/, '')}`,
+      url: `${ORIGIN}${userPath()}/app/${id.replace(/^c_/, '')}`,
       platform: 'Gemini',
       tag: '',
     };
