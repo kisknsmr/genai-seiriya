@@ -203,8 +203,28 @@
 
   ACS.platforms['gemini.google.com'] = {
     platform: 'Gemini',
-    // 「チャット」見出しの直前。会話が0件でも見出しは出るので、ここを目印にする
+    // ロゴ「Gemini」の直後。会話が0件でも必ずある場所。形は「サイドバーを閉じる」アイコンにそろえる。
+    // パソコン用（-desktop）とスマホ用（-mobile）の部品があるので、見えている方を使う
     sidebarSpot: () => {
+      const shown = (el) => el && el.getBoundingClientRect().width > 0;
+      const ref = [...document.querySelectorAll('.sidenav-header-buttons button')].find(shown);
+      const logo = [...document.querySelectorAll('a[data-test-id="side-nav-sparkle-button"]')].find(shown);
+      if (logo) {
+        // 横並びの箱に入るまで外側へ上がり、その直後に置く
+        let item = logo;
+        for (let i = 0; i < 4 && item.parentElement; i++) {
+          const cs = getComputedStyle(item.parentElement);
+          if (cs.display.includes('flex') && cs.flexDirection.startsWith('row')) break;
+          item = item.parentElement;
+        }
+        if (item.parentElement) return { parent: item.parentElement, before: item.nextSibling, via: 'side-nav-sparkle-button', ref, iconOnly: true };
+      }
+      // 予備: 「サイドバーを閉じる」アイコンの左
+      if (ref) {
+        const group = ref.closest('.sidenav-header-buttons');
+        return { parent: group, before: group.firstElementChild, via: 'sidenav-header-buttons', ref, iconOnly: true };
+      }
+      // 予備: 「チャット」見出しの直前（サイドバーを畳んでいるときなど）
       const sec = document.querySelector('expandable-section[data-test-id="chats-expandable-section"]');
       const box = sec && (sec.closest('infinite-scroller') || sec);
       return box && box.parentElement ? { parent: box.parentElement, before: box, via: 'chats-expandable-section' } : null;

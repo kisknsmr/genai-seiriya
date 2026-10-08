@@ -170,6 +170,15 @@
   ACS.platforms['claude.ai'] = {
     platform: 'Claude',
     sidebarSelector: null,
+    // ロゴ「Claude」の直後。形と色は「サイドバーを非表示」アイコンにそろえる
+    sidebarSpot: () => {
+      const brand = document.querySelector('.df-titlebar .df-titlebar-brand-col');
+      if (!brand || !brand.parentElement || !(brand.getBoundingClientRect().width > 0)) return null;
+      const bar = brand.parentElement;
+      const ref = bar.querySelector('button[data-cds-icon-only]') || bar.querySelector('[role="radio"]');
+      return { parent: bar, before: brand.nextSibling, via: 'df-titlebar-brand', ref, iconOnly: true };
+    },
+    // 予備（サイドバーを畳んでいるときなど）
     sidebarAfter: ['a[href="/recents"]', 'a[href="/new"]'], // 「チャット」→「新しいチャット」の順に探す
     matchSideLook: true, // ボタンの形を隣の「チャット」項目にそろえる
     linkRe: /\/chat\/([0-9a-f-]{36})/i,

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "生成AI整理屋さん",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Gemini・ChatGPT・Claude の会話をまとめて Markdown / HTML で保存。選んだ会話の一括削除もできます。",
   "icons": {
     "16": "icons/icon16.png",

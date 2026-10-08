@@ -78,7 +78,20 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
     const NS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(NS, 'svg');
     svg.setAttribute('viewBox', '0 0 24 24');
+    // 各サイトのアイコンと見分けがつくよう、ティール→紫のグラデーションで塗る（ライト/ダークどちらでも見える中間の明るさ）
+    const defs = document.createElementNS(NS, 'defs');
+    const grad = document.createElementNS(NS, 'linearGradient');
+    for (const [k, v] of Object.entries({ id: 'gs-grad', x1: '0', y1: '0', x2: '1', y2: '1' })) grad.setAttribute(k, v);
+    for (const [offset, color] of [['0', '#14b8a6'], ['1', '#8b5cf6']]) {
+      const stop = document.createElementNS(NS, 'stop');
+      stop.setAttribute('offset', offset);
+      stop.setAttribute('stop-color', color);
+      grad.append(stop);
+    }
+    defs.append(grad);
+    svg.append(defs);
     const path = document.createElementNS(NS, 'path');
+    path.setAttribute('fill', 'url(#gs-grad)');
     path.setAttribute('d', 'M12 16 7 11l1.4-1.45 2.6 2.6V4h2v8.15l2.6-2.6L17 11Zm-6 4q-.825 0-1.412-.587Q4 18.825 4 18v-3h2v3h12v-3h2v3q0 .825-.587 1.413Q18.825 20 18 20Z');
     svg.append(path);
     return svg;
@@ -90,7 +103,8 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
   const log = (...a) => console.info('[生成AI整理屋さん]', ...a);
 
   function isVisible(el) {
-    if (!el || !el.isConnected) return false;
+    // 要素でないもの（目に見えない区切り＝コメントなど）は「見えない」扱い
+    if (!(el instanceof Element) || !el.isConnected) return false;
     const r = el.getBoundingClientRect();
     return r.width > 0 && r.height > 0;
   }
@@ -101,7 +115,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
     // サイト独自の置き場所（Gemini の「チャット」見出しの直前など）
     if (api.sidebarSpot) {
       const spot = api.sidebarSpot();
-      if (spot && isVisible(spot.before)) return spot;
+      if (spot && isVisible(spot.parent)) return spot;
     }
     // サイドバーの決まった項目（「チャット」など）の直後。サイドバーを畳んでいても見つかる
     for (const sel of api.sidebarAfter || []) {
@@ -178,14 +192,18 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
     s.width = compact ? cs.width : '';
     s.paddingLeft = compact ? '0' : cs.paddingLeft;
     s.paddingRight = compact ? '0' : cs.paddingRight;
-    const icon = ref.querySelector('svg');
+    // Gemini（mat-icon）や Claude（data-cds="Icon"）は、文字で描くアイコン
+    const icon = ref.querySelector('svg, mat-icon, [data-cds="Icon"]');
     const r = icon && icon.getBoundingClientRect();
     if (r && r.width > 0) {
       const svg = sideBtn.querySelector('svg');
       svg.style.width = r.width + 'px';
       svg.style.height = r.height + 'px';
     }
-    sideHost.style.margin = '0';
+    // アイコンだけのときは、ロゴにくっつかないよう少し空け、右側の項目は右端へ寄せる
+    sideHost.style.margin = sideIconOnly ? '0 auto 0 4px' : '0';
+    // アイコンの並びが横並びの箱でなくても、横に並ぶようにする
+    sideHost.style.display = sideIconOnly ? 'inline-block' : '';
   }
 
   function mount() {
@@ -203,7 +221,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
         // アイコンだけの並び（ChatGPT の見出しなど）では、幅に関係なく常にアイコンだけにする
         const compact = sideIconOnly || w < 150;
         sideBtn.classList.toggle('compact', compact);
-        if (api.matchSideLook) {
+        if (api.matchSideLook || sideIconOnly) {
           if (!sideRef || !sideRef.isConnected) sideRef = (findSidebarSpot() || {}).ref || null;
           if (sideRef) matchLook(sideRef, compact);
         }

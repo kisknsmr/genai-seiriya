@@ -223,12 +223,14 @@
 
   ACS.platforms['chatgpt.com'] = {
     platform: 'ChatGPT',
-    // サイドバー見出しの「検索」アイコンの左。会話が0件でも必ずある場所なので、ここを目印にする
+    // サイドバー見出しのロゴ「ChatGPT」の直後。会話が0件でも必ずある場所なので、ここを目印にする。
+    // 形は右側の「検索」アイコンにそろえる
     sidebarSpot: () => {
-      const close = document.querySelector('#sidebar-header [data-testid="close-sidebar-button"]');
-      const group = close && close.parentElement;
-      const first = group && [...group.children].find((el) => el.id !== 'genai-seiriya-side');
-      return first ? { parent: group, before: group.firstElementChild, via: 'sidebar-header', ref: first, iconOnly: true } : null;
+      const head = document.getElementById('sidebar-header');
+      const logo = head && head.querySelector(':scope > a[href="/"]');
+      const close = head && head.querySelector('[data-testid="close-sidebar-button"]');
+      const ref = close && close.parentElement && close.parentElement.querySelector('button');
+      return logo && ref ? { parent: head, before: logo.nextSibling, via: 'sidebar-header', ref, iconOnly: true } : null;
     },
     // 予備: 「新しいチャット」の直後
     sidebarAfter: ['aside a[data-testid="create-new-chat-button"]', 'a[data-testid="create-new-chat-button"]'],
