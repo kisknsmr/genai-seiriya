@@ -26,6 +26,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
 .btn:disabled{opacity:.5;cursor:default}
 .primary{background:#0b57d0!important;color:#fff!important;font-weight:500;padding:10px 20px}
 .count{font-size:13px;opacity:.75}
+.hint{font-size:12px;opacity:.6;padding:0 20px}
 .list{flex:1;overflow-y:auto;padding:0 12px;border-top:1px solid rgba(128,128,128,.15);border-bottom:1px solid rgba(128,128,128,.15)}
 .row{display:flex;gap:10px;align-items:center;padding:7px 8px;border-radius:8px;cursor:pointer}
 .row:hover{background:#f0f4f9}
@@ -276,6 +277,7 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
           reloadBtn
         ),
         list,
+        h('div', { class: 'hint' }, 'Shift+クリックで範囲選択／↑↓で移動、Shift+↑↓で選びながら移動、Spaceで切り替え'),
         h(
           'div',
           { class: 'foot' },
@@ -347,18 +349,73 @@ input[type=search]{flex:1;min-width:160px;padding:8px 12px;border:1px solid #ccc
     ui.count.textContent = `${state.checked.size} / ${state.convs.length} 件を選択`;
   }
 
+  // 範囲選択の起点（最後に操作した行の番号）
+  let anchor = -1;
+
   function renderList() {
-    const rows = visible().map((c) => {
+    const convs = visible();
+    const boxes = [];
+    const setRow = (i, on) => {
+      boxes[i].checked = on;
+      on ? state.checked.add(convs[i].id) : state.checked.delete(convs[i].id);
+    };
+    // 起点から i 番目までを、まとめて on/off にする
+    const setRange = (i, on) => {
+      const from = anchor < 0 ? i : anchor;
+      for (let k = Math.min(from, i); k <= Math.max(from, i); k++) setRow(k, on);
+      updateCount();
+    };
+    let shiftClick = false;
+    const rows = convs.map((c, i) => {
       const cb = h('input', {
         type: 'checkbox',
         checked: state.checked.has(c.id),
-        onchange: (e) => {
-          e.target.checked ? state.checked.add(c.id) : state.checked.delete(c.id);
+        onchange: () => {
+          // Shift+クリックなら、前にクリックした行からここまでを同じ状態にそろえる
+          if (shiftClick && anchor >= 0) setRange(i, cb.checked);
+          else setRow(i, cb.checked);
+          shiftClick = false;
+          anchor = i;
+          cb.focus();
           updateCount();
         },
+        // ↑↓ で移動、Shift+↑↓ で選びながら移動、Space で切り替え
+        onkeydown: (e) => {
+          shiftClick = false;
+          const step = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
+          if (!step) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const next = i + step;
+          if (next < 0 || next >= boxes.length) return;
+          if (e.shiftKey) {
+            setRow(i, true);
+            setRow(next, true);
+            updateCount();
+          }
+          anchor = next;
+          boxes[next].focus();
+          boxes[next].scrollIntoView({ block: 'nearest' });
+        },
       });
-      return h('label', { class: 'row' }, cb, h('span', { class: 't', title: c.title }, c.title || '(無題)'), c.tag ? h('span', { class: 'tag', title: c.tag }, c.tag) : null, h('span', { class: 'd' }, ex.formatDate(c.time, false)));
+      boxes.push(cb);
+      return h(
+        'label',
+        {
+          class: 'row',
+          // Shift を押しながらのクリックで、文字が選択されてしまうのを防ぐ
+          onmousedown: (e) => {
+            shiftClick = e.shiftKey;
+            if (e.shiftKey) e.preventDefault();
+          },
+        },
+        cb,
+        h('span', { class: 't', title: c.title }, c.title || '(無題)'),
+        c.tag ? h('span', { class: 'tag', title: c.tag }, c.tag) : null,
+        h('span', { class: 'd' }, ex.formatDate(c.time, false))
+      );
     });
+    anchor = -1;
     ui.list.replaceChildren(...(rows.length ? rows : [h('div', { class: 'empty' }, state.busy ? '読み込み中…' : '会話がありません')]));
     updateCount();
   }
