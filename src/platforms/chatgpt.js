@@ -230,7 +230,19 @@
       const logo = head && head.querySelector(':scope > a[href="/"]');
       const close = head && head.querySelector('[data-testid="close-sidebar-button"]');
       const ref = close && close.parentElement && close.parentElement.querySelector('button');
-      return logo && ref ? { parent: head, before: logo.nextSibling, via: 'sidebar-header', ref, iconOnly: true } : null;
+      if (logo && ref) return { parent: head, before: logo.nextSibling, via: 'sidebar-header', ref, iconOnly: true };
+      // 新しい画面（2026年10月〜）: 見出しは「ロゴ」と「検索・サイドバー開閉アイコン」の2つの箱が左右に並ぶ
+      for (const trigger of document.querySelectorAll('button[data-app-shell-sidebar-trigger="true"][aria-expanded="true"]')) {
+        let row = trigger.parentElement;
+        // ボタンを1つも含まない箱（＝ロゴ）が先頭にある所まで上がる
+        while (row && row !== document.body && !(row.children.length >= 2 && !row.firstElementChild.querySelector('button'))) row = row.parentElement;
+        if (!row || row === document.body) continue;
+        const brand = row.firstElementChild;
+        if (!brand.querySelector('svg')) continue;
+        const icons = [...row.children].find((c) => c.contains(trigger));
+        return { parent: row, before: brand.nextSibling, via: 'app-shell-header', ref: icons.querySelector('button'), iconOnly: true };
+      }
+      return null;
     },
     // 予備: 新しい画面（2026年10月〜）では「画像」の直後、古い画面では「新しいチャット」の直後
     sidebarAfter: [
