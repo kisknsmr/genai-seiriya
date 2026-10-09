@@ -232,8 +232,13 @@
       const ref = close && close.parentElement && close.parentElement.querySelector('button');
       return logo && ref ? { parent: head, before: logo.nextSibling, via: 'sidebar-header', ref, iconOnly: true } : null;
     },
-    // 予備: 「新しいチャット」の直後
-    sidebarAfter: ['aside a[data-testid="create-new-chat-button"]', 'a[data-testid="create-new-chat-button"]'],
+    // 予備: 新しい画面（2026年10月〜）では「画像」の直後、古い画面では「新しいチャット」の直後
+    sidebarAfter: [
+      'nav button[data-sidebar-destination="builtin:images"]',
+      'nav button[data-sidebar-destination]',
+      'aside a[data-testid="create-new-chat-button"]',
+      'a[data-testid="create-new-chat-button"]',
+    ],
     sidebarSelector: '#history', // 予備: 会話一覧の直前
     matchSideLook: true, // ボタンの形を隣の項目（「検索」アイコンなど）にそろえる
     linkRe: /\/c\/([0-9a-f-]{36})/i,
