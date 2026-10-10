@@ -47,7 +47,6 @@
       conv.tag ? `tag: "${conv.tag.replace(/"/g, '\\"')}"` : null,
       `url: ${conv.url}`,
       conv.time ? `created: ${formatDate(conv.time)}` : null,
-      `saved: ${formatDate(Date.now())}`,
       '---',
       '',
       `# ${conv.title || '(無題)'}`,
@@ -126,7 +125,6 @@ body.p-claude{--bg:#262624;--user:#141413;--code:#1f1e1d;--border:#3e3d39;--acce
       conv.platform,
       conv.tag ? esc(conv.tag) : '',
       conv.time ? `作成 ${formatDate(conv.time)}` : '',
-      `保存 ${formatDate(Date.now())}`,
       `<a href="${esc(conv.url)}">元の会話を開く</a>`,
     ].filter(Boolean);
     const body = turns
@@ -153,7 +151,7 @@ body.p-claude{--bg:#262624;--user:#141413;--code:#1f1e1d;--border:#3e3d39;--acce
       .join('\n');
     return page(
       `${platform} 会話一覧`,
-      `<header><h1>${esc(platform)} 会話一覧</h1><div class="meta">${entries.length} 件 ・ 保存 ${formatDate(Date.now())}</div></header><ul class="list">${items}</ul>`,
+      `<header><h1>${esc(platform)} 会話一覧</h1><div class="meta">${entries.length} 件</div></header><ul class="list">${items}</ul>`,
       platform
     );
   }
